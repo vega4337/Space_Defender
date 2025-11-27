@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Void: Hyperion</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #050505;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        canvas {
+            box-shadow: 0 0 50px rgba(0, 240, 255, 0.2);
+            border: 2px solid #333;
+        }
+        #instructions {
+            position: absolute;
+            bottom: 10px;
+            color: #555;
+            font-size: 12px;
+            pointer-events: none;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+</head>
+<body>
+    <div id="game-container"></div>
+    <div id="instructions">WASD / ARROWS to Move | SPACE to Shoot | SHIFT to Dash</div>
+    <script src="game.js"></script>
+</body>
+</html>
