@@ -35,7 +35,7 @@ let keySpace;
 let keyShift;
 let bullets;
 let enemies;
-let particles;       // particle system root (not strictly needed, but kept)
+let particles;
 let score = 0;
 let scoreText;
 let level = 1;
@@ -47,7 +47,6 @@ let dashCooldown = 0;
 
 // --- ASSET GENERATION (Draws graphics to memory) ---
 function preload() {
-    // We use a Graphics object to generate textures so you don't need external PNGs
     const g = this.make.graphics({ x: 0, y: 0, add: false });
 
     // 1. Player Ship (Neon Blue)
@@ -122,7 +121,7 @@ function create() {
         blendMode: 'ADD',
         tint: 0x00f3ff,
         lifespan: 200,
-        follow: null, // Will set later
+        follow: null,
         on: false
     });
 
@@ -141,21 +140,18 @@ function create() {
     // 3. Player Setup
     player = this.physics.add.sprite(400, 500, 'player');
     player.setCollideWorldBounds(true);
-    player.setDrag(1000); // Space friction
+    player.setDrag(1000);
     player.setMaxVelocity(300);
     player.hp = 100;
     player.invulnerable = false;
 
     // 4. Groups
-
-    // Bullets: pooled physics images
     bullets = this.physics.add.group({
         classType: Phaser.Physics.Arcade.Image,
         defaultKey: 'bullet',
         maxSize: 50
     });
 
-    // Enemies
     enemies = this.physics.add.group();
 
     // 5. Input
@@ -191,7 +187,7 @@ function update(time, delta) {
 
     // 1. Background Scroll
     if (this.stars) {
-        this.stars.children.iterate((star) => {
+        this.stars.getChildren().forEach((star) => {
             if (!star) return;
             star.y += star.speed;
             if (star.y > 600) {
@@ -222,7 +218,6 @@ function update(time, delta) {
         player.body.velocity.x *= 2;
         player.body.velocity.y *= 2;
 
-        // Visual Dash Effect
         this.tweens.add({
             targets: player,
             alpha: 0.5,
@@ -230,15 +225,14 @@ function update(time, delta) {
             yoyo: true,
             repeat: 1
         });
-        dashCooldown = time + 1000; // 1s cooldown
+        dashCooldown = time + 1000;
     }
 
-    // 4. Shooting (pooled bullets)
+    // 4. Shooting
     if (keySpace.isDown && time > lastFired) {
         const bullet = bullets.get();
 
         if (bullet) {
-            // Reactivate + reset
             bullet.setTexture('bullet');
             bullet.setActive(true);
             bullet.setVisible(true);
@@ -251,37 +245,39 @@ function update(time, delta) {
             }
 
             bullet.setVelocityY(-500);
-            lastFired = time + 150; // Fire rate
+            lastFired = time + 150;
         }
     }
 
     // 5. Cleanup bullets
-    bullets.children.iterate((b) => {
-        if (!b) return;
+    if (bullets) {
+        bullets.getChildren().forEach((b) => {
+            if (!b || !b.active) return;
 
-        if (b.active && b.y < -50) {
-            bullets.killAndHide(b);
-            if (b.body) {
-                b.body.enable = false;
-                b.setVelocity(0, 0);
+            if (b.y < -50) {
+                bullets.killAndHide(b);
+                if (b.body) {
+                    b.body.enable = false;
+                    b.setVelocity(0, 0);
+                }
             }
-        }
-    });
+        });
+    }
 
     // 6. Enemy behavior + cleanup
-    enemies.children.iterate((e) => {
-        if (!e) return;
+    if (enemies) {
+        enemies.getChildren().forEach((e) => {
+            if (!e || !e.active) return;
 
-        if (e.active) {
-            // AI Logic
             if (e.texture && e.texture.key === 'enemy_chaser') {
                 this.physics.moveToObject(e, player, 150);
             }
+
             if (e.y > 650) {
                 e.destroy();
             }
-        }
-    });
+        });
+    }
 }
 
 // --- GAME LOGIC HELPER FUNCTIONS ---
@@ -289,7 +285,6 @@ function update(time, delta) {
 function spawnEnemy() {
     if (isGameOver) return;
 
-    // Difficulty Scaling
     const spawnCount = Math.floor(level / 2) + 1;
 
     for (let i = 0; i < spawnCount; i++) {
@@ -303,7 +298,6 @@ function spawnEnemy() {
         if (type === 'enemy_grunt') {
             enemy.setVelocity(Phaser.Math.Between(-50, 50), 100 + level * 10);
         } else {
-            // Chasers handled in update
             enemy.setTint(0xff5555);
         }
     }
@@ -313,37 +307,29 @@ function hitEnemy(bullet, enemy) {
     if (!bullet || !enemy) return;
     if (!bullet.active || !enemy.active) return;
 
-    // Properly deactivate bullet
     bullets.killAndHide(bullet);
     if (bullet.body) {
         bullet.body.enable = false;
         bullet.setVelocity(0, 0);
     }
 
-    // Explosion Effect
     this.explosionEmitter.setPosition(enemy.x, enemy.y);
     this.explosionEmitter.setTint(0xffaa00);
     this.explosionEmitter.emitParticle(10);
 
     enemy.destroy();
 
-    // Score
     score += 100;
     scoreText.setText('SCORE: ' + score);
 
-    // Level Up Check
     if (score % 1000 === 0) {
         level++;
         levelText.setText('WAVE: ' + level);
-        // Heal on level up
         player.hp = Math.min(player.hp + 20, 100);
         hpText.setText('HP: ' + player.hp + '%');
-
-        // Level up flash
         this.cameras.main.flash(500, 0, 255, 255);
     }
 
-    // Camera Shake
     this.cameras.main.shake(100, 0.01);
 }
 
@@ -352,11 +338,9 @@ function hitPlayer(playerSprite, enemy) {
 
     enemy.destroy();
 
-    // Damage
     playerSprite.hp -= 20;
     hpText.setText('HP: ' + playerSprite.hp + '%');
 
-    // Camera Shake
     this.cameras.main.shake(200, 0.02);
     this.cameras.main.flash(200, 255, 0, 0);
 
