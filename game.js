@@ -35,7 +35,7 @@ let keySpace;
 let keyShift;
 let bullets;
 let enemies;
-let particles;
+let particles;       // particle system root (not strictly needed, but kept)
 let score = 0;
 let scoreText;
 let level = 1;
@@ -93,6 +93,7 @@ function preload() {
     g.fillStyle(0xffffff);
     g.fillCircle(4, 4, 4);
     g.generateTexture('particle', 8, 8);
+    g.clear();
 }
 
 // --- INITIALIZATION ---
@@ -100,7 +101,7 @@ function create() {
     // 1. Starfield Background (Parallax)
     this.stars = this.add.group();
     for (let i = 0; i < 100; i++) {
-        let star = this.add.rectangle(
+        const star = this.add.rectangle(
             Phaser.Math.Between(0, 800),
             Phaser.Math.Between(0, 600),
             Phaser.Math.Between(1, 3),
@@ -112,8 +113,8 @@ function create() {
     }
 
     // 2. Particle Managers
-    const particles = this.add.particles('particle');
-    
+    particles = this.add.particles('particle');
+
     // Engine Trail
     this.trailEmitter = particles.createEmitter({
         speed: 100,
@@ -146,11 +147,15 @@ function create() {
     player.invulnerable = false;
 
     // 4. Groups
+
+    // Bullets: pooled physics images
     bullets = this.physics.add.group({
+        classType: Phaser.Physics.Arcade.Image,
         defaultKey: 'bullet',
         maxSize: 50
     });
 
+    // Enemies
     enemies = this.physics.add.group();
 
     // 5. Input
@@ -185,16 +190,19 @@ function update(time, delta) {
     }
 
     // 1. Background Scroll
-    this.stars.children.iterate((star) => {
-        star.y += star.speed;
-        if (star.y > 600) {
-            star.y = 0;
-            star.x = Phaser.Math.Between(0, 800);
-        }
-    });
+    if (this.stars) {
+        this.stars.children.iterate((star) => {
+            if (!star) return;
+            star.y += star.speed;
+            if (star.y > 600) {
+                star.y = 0;
+                star.x = Phaser.Math.Between(0, 800);
+            }
+        });
+    }
 
     // 2. Player Movement
-    let acc = 800;
+    const acc = 800;
     player.setAcceleration(0);
 
     if (cursors.left.isDown || wasd.A.isDown) player.setAccelerationX(-acc);
@@ -211,10 +219,9 @@ function update(time, delta) {
 
     // 3. Dash Mechanic (Shift)
     if (Phaser.Input.Keyboard.JustDown(keyShift) && time > dashCooldown) {
-        const dashSpeed = 600;
-        player.body.velocity.x = player.body.velocity.x * 2;
-        player.body.velocity.y = player.body.velocity.y * 2;
-        
+        player.body.velocity.x *= 2;
+        player.body.velocity.y *= 2;
+
         // Visual Dash Effect
         this.tweens.add({
             targets: player,
@@ -226,28 +233,53 @@ function update(time, delta) {
         dashCooldown = time + 1000; // 1s cooldown
     }
 
-    // 4. Shooting
+    // 4. Shooting (pooled bullets)
     if (keySpace.isDown && time > lastFired) {
-        let bullet = bullets.get(player.x, player.y - 20);
+        const bullet = bullets.get();
+
         if (bullet) {
-            bullet.enableBody(true, player.x, player.y - 20, true, true);
+            // Reactivate + reset
+            bullet.setTexture('bullet');
+            bullet.setActive(true);
+            bullet.setVisible(true);
+
+            if (bullet.body) {
+                bullet.body.enable = true;
+                bullet.body.reset(player.x, player.y - 20);
+            } else {
+                bullet.setPosition(player.x, player.y - 20);
+            }
+
             bullet.setVelocityY(-500);
             lastFired = time + 150; // Fire rate
         }
     }
 
-    // 5. Cleanup
+    // 5. Cleanup bullets
     bullets.children.iterate((b) => {
-        if (b.active && b.y < -50) bullets.killAndHide(b);
+        if (!b) return;
+
+        if (b.active && b.y < -50) {
+            bullets.killAndHide(b);
+            if (b.body) {
+                b.body.enable = false;
+                b.setVelocity(0, 0);
+            }
+        }
     });
 
+    // 6. Enemy behavior + cleanup
     enemies.children.iterate((e) => {
+        if (!e) return;
+
         if (e.active) {
             // AI Logic
-            if (e.texture.key === 'enemy_chaser') {
+            if (e.texture && e.texture.key === 'enemy_chaser') {
                 this.physics.moveToObject(e, player, 150);
             }
-            if (e.y > 650) e.destroy();
+            if (e.y > 650) {
+                e.destroy();
+            }
         }
     });
 }
@@ -256,41 +288,49 @@ function update(time, delta) {
 
 function spawnEnemy() {
     if (isGameOver) return;
-    
+
     // Difficulty Scaling
     const spawnCount = Math.floor(level / 2) + 1;
-    
-    const x = Phaser.Math.Between(50, 750);
-    const type = Math.random() > 0.3 ? 'enemy_grunt' : 'enemy_chaser';
-    
-    let enemy = enemies.create(x, -50, type);
-    enemy.setBounce(1);
-    enemy.setCollideWorldBounds(false);
-    
-    if (type === 'enemy_grunt') {
-        enemy.setVelocity(Phaser.Math.Between(-50, 50), 100 + (level * 10));
-    } else {
-        // Chasers handled in update
-        enemy.setTint(0xff5555);
+
+    for (let i = 0; i < spawnCount; i++) {
+        const x = Phaser.Math.Between(50, 750);
+        const type = Math.random() > 0.3 ? 'enemy_grunt' : 'enemy_chaser';
+
+        const enemy = enemies.create(x, -50, type);
+        enemy.setBounce(1);
+        enemy.setCollideWorldBounds(false);
+
+        if (type === 'enemy_grunt') {
+            enemy.setVelocity(Phaser.Math.Between(-50, 50), 100 + level * 10);
+        } else {
+            // Chasers handled in update
+            enemy.setTint(0xff5555);
+        }
     }
 }
 
 function hitEnemy(bullet, enemy) {
+    if (!bullet || !enemy) return;
     if (!bullet.active || !enemy.active) return;
-    
-    bullet.setActive(false).setVisible(false);
-    
+
+    // Properly deactivate bullet
+    bullets.killAndHide(bullet);
+    if (bullet.body) {
+        bullet.body.enable = false;
+        bullet.setVelocity(0, 0);
+    }
+
     // Explosion Effect
     this.explosionEmitter.setPosition(enemy.x, enemy.y);
     this.explosionEmitter.setTint(0xffaa00);
     this.explosionEmitter.emitParticle(10);
-    
+
     enemy.destroy();
-    
+
     // Score
     score += 100;
     scoreText.setText('SCORE: ' + score);
-    
+
     // Level Up Check
     if (score % 1000 === 0) {
         level++;
@@ -298,29 +338,29 @@ function hitEnemy(bullet, enemy) {
         // Heal on level up
         player.hp = Math.min(player.hp + 20, 100);
         hpText.setText('HP: ' + player.hp + '%');
-        
+
         // Level up flash
         this.cameras.main.flash(500, 0, 255, 255);
     }
-    
+
     // Camera Shake
     this.cameras.main.shake(100, 0.01);
 }
 
-function hitPlayer(player, enemy) {
-    if (player.invulnerable) return;
-    
+function hitPlayer(playerSprite, enemy) {
+    if (playerSprite.invulnerable) return;
+
     enemy.destroy();
-    
+
     // Damage
-    player.hp -= 20;
-    hpText.setText('HP: ' + player.hp + '%');
-    
+    playerSprite.hp -= 20;
+    hpText.setText('HP: ' + playerSprite.hp + '%');
+
     // Camera Shake
     this.cameras.main.shake(200, 0.02);
     this.cameras.main.flash(200, 255, 0, 0);
-    
-    if (player.hp <= 0) {
+
+    if (playerSprite.hp <= 0) {
         gameOver(this);
     }
 }
@@ -330,14 +370,14 @@ function gameOver(scene) {
     player.setTint(0x555555);
     player.setVelocity(0, 0);
     scene.physics.pause();
-    
+
     const centerX = scene.cameras.main.width / 2;
     const centerY = scene.cameras.main.height / 2;
-    
+
     scene.add.text(centerX, centerY - 50, 'SYSTEM FAILURE', {
         fontSize: '40px', fill: '#ff0000', fontFamily: 'Courier', fontStyle: 'bold'
     }).setOrigin(0.5);
-    
+
     scene.add.text(centerX, centerY + 20, 'Press SPACE to Reboot', {
         fontSize: '20px', fill: '#ffffff', fontFamily: 'Courier'
     }).setOrigin(0.5);
